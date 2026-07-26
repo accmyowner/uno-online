@@ -8,13 +8,13 @@
 // ─────────────────────────────────────────────────────────────
 
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyCOyQoy-V7mvYIQQRfYLd3YOWqc0wEvBOM",
+  authDomain: "uno-online-2c53e.firebaseapp.com",
+  databaseURL: "https://uno-online-2c53e-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "uno-online-2c53e",
+  storageBucket: "uno-online-2c53e.firebasestorage.app",
+  messagingSenderId: "848806710388",
+  appId: "1:848806710388:web:e6f9e483e5d22895a7d521",
 };
 
 // Технический флаг: не трогайте. Помогает показать понятную ошибку, если конфиг не заполнен.
