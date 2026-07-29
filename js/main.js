@@ -7,6 +7,8 @@ import { renderLobby } from "./lobby.js";
 import { renderGame, unmountGame } from "./game.js";
 import { toast } from "./ui.js";
 import { mountChat, unmountChat } from "./chat.js";
+import "./background.js";
+import { initAtmosphere } from "./atmosphere.js";
 
 const root = document.getElementById("app");
 
@@ -60,6 +62,7 @@ function enterRoom(code) {
 }
 
 function boot() {
+  initAtmosphere();
   if (!CONFIG_FILLED) {
     root.innerHTML = `
       <div class="config-warning glass card-panel">

@@ -6,6 +6,7 @@ import { UNO_WINDOW } from "./engine.js";
 import { cardEl, miniStack, toast, modal, pickColor, pickPlayer, colorName } from "./ui.js";
 import { escapeHtml } from "./utils.js";
 import { sfx } from "./sfx.js";
+import { settings } from "./settings.js";
 
 // ── Состояние экрана (между вызовами render) ──
 let prevHandIds = new Set();
@@ -241,27 +242,34 @@ export function renderGame(root, data, ctx) {
 
   // ── Звуки и эффекты событий ──
   if (versionChanged) {
+    const fx = settings.effectsOn();
     const ev = g.lastEvent;
     if (ev && ev.ts && shownEventTs !== ev.ts) {
       shownEventTs = ev.ts;
       if (ev.type === "uno") {
         sfx.uno();
-        unoSplash(players[ev.by]?.name || "Игрок");
+        if (fx) unoSplash(players[ev.by]?.name || "Игрок");
       } else if (ev.type === "caught") {
         sfx.catch();
         const tgt = players[ev.target]?.name || "Игрок";
         toast(`«${tgt}» забыл сказать UNO!  +2 карты`, "warn");
-        effectBurst("+2", "catch");
+        if (fx) effectBurst("+2", "catch");
       } else if (ev.type === "swap") {
         sfx.swap();
         const a = players[ev.by]?.name || "Игрок";
         const b = players[ev.target]?.name || "Игрок";
         toast(`🃏 ${a} обменялся руками с ${b}!`, "info");
-        swapOverlay(a, b);
+        if (fx) swapOverlay(a, b);
       }
     }
-    if (g.lastAction?.type === "play" && g.lastAction?.card?.value !== "swap") sfx.play();
-    if (g.lastAction?.type === "timeout") sfx.timeout();
+    const la = g.lastAction;
+    if (la?.type === "play" && la?.card?.value !== "swap") {
+      sfx.play();
+      // Короткий эффект появления штрафных карт +2 / +4
+      if (fx && la.card?.value === "draw2") effectBurst("+2", "draw");
+      if (fx && la.card?.value === "wild4") effectBurst("+4", "draw");
+    }
+    if (la?.type === "timeout") sfx.timeout();
   }
 
   prevVersion = g.version;
@@ -467,7 +475,8 @@ async function doPass(code) {
 
 // ── Победное окно ──
 function showWinnerModal(g, players, ctx) {
-  sfx.win();
+  const iWon = g.winnerId === state.playerId;
+  if (iWon) sfx.win(); else sfx.lose();
   const isHost = current?.data?.meta?.host === state.playerId;
   const winner = players[g.winnerId] || { name: "Игрок", avatar: "🏆" };
 
@@ -484,7 +493,7 @@ function showWinnerModal(g, players, ctx) {
   const content = document.createElement("div");
   content.className = "winner-modal";
   content.innerHTML = `
-    <div class="confetti" aria-hidden="true">${"<i></i>".repeat(24)}</div>
+    <div class="confetti" aria-hidden="true">${settings.effectsOn() ? "<i></i>".repeat(24) : ""}</div>
     <div class="winner-crown">🏆</div>
     <h2 class="winner-title">${escapeHtml(winner.name)} побеждает!</h2>
     <p class="winner-sub">+${g.roundPoints} очков за партию</p>

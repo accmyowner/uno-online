@@ -38,9 +38,13 @@ html, body { height: 100%; }
 body {
   font-family: var(--font-body);
   color: var(--ink);
-  background: radial-gradient(1200px 800px at 20% -10%, #241a4d 0%, transparent 60%),
-              radial-gradient(1000px 700px at 110% 10%, #123a52 0%, transparent 55%),
-              var(--bg);
+  background:
+    radial-gradient(900px 600px at 10% -8%, rgba(255,59,92,.15), transparent 60%),
+    radial-gradient(900px 600px at 102% 2%, rgba(43,127,255,.15), transparent 60%),
+    radial-gradient(900px 700px at -2% 102%, rgba(47,211,90,.13), transparent 60%),
+    radial-gradient(1000px 700px at 102% 102%, rgba(255,206,31,.12), transparent 60%),
+    radial-gradient(1200px 900px at 50% 42%, #1b1442 0%, transparent 72%),
+    var(--bg);
   min-height: 100dvh;
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
@@ -49,8 +53,10 @@ body {
 .bg-glow {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(600px 400px at 80% 90%, rgba(168, 85, 247, 0.12), transparent 60%),
-    radial-gradient(500px 400px at 10% 80%, rgba(43, 127, 255, 0.1), transparent 60%);
+    radial-gradient(560px 420px at 82% 88%, rgba(168, 85, 247, 0.12), transparent 60%),
+    radial-gradient(520px 420px at 12% 84%, rgba(47, 211, 90, 0.09), transparent 60%),
+    radial-gradient(520px 420px at 88% 12%, rgba(43, 127, 255, 0.09), transparent 60%),
+    radial-gradient(520px 420px at 10% 10%, rgba(255, 59, 92, 0.08), transparent 60%);
 }
 
 #app { position: relative; z-index: 1; min-height: 100dvh; display: flex; flex-direction: column; }
@@ -565,3 +571,77 @@ body {
 .rule-hint { font-size: 12px; color: var(--muted); font-weight: 400; }
 .rule-row.future { opacity: .6; }
 .rule-row.future .rule-label { flex-direction: row; align-items: center; }
+
+/* ============================================================
+   АТМОСФЕРА: современные анимации, шестерёнка настроек, эффекты
+   ============================================================ */
+
+/* Более «вкусные» анимации кнопок */
+.btn { transition: transform .16s cubic-bezier(.2,.8,.3,1.25), box-shadow .24s ease, background .24s ease, opacity .2s ease; }
+.btn:hover { transform: translateY(-2px) scale(1.035); }
+.btn:active { transform: translateY(0) scale(.96); }
+.btn-primary:hover { box-shadow: 0 16px 40px rgba(124,58,237,.6), 0 0 22px rgba(168,85,247,.5); }
+.btn-start:hover { box-shadow: 0 16px 40px rgba(20,184,166,.55), 0 0 22px rgba(47,211,90,.45); }
+
+/* Карты: плавный подъём + лёгкое покачивание при наведении */
+.hand .card { transition: transform .2s cubic-bezier(.2,.9,.3,1.2), box-shadow .24s ease, filter .2s ease; }
+.hand .card:hover { animation: cardWobble 1.8s ease-in-out infinite; }
+@keyframes cardWobble {
+  0%,100% { transform: rotate(calc(var(--off)*4deg)) translateY(-26px) scale(1.07); }
+  50%     { transform: rotate(calc(var(--off)*4deg - 2.5deg)) translateY(-30px) scale(1.08); }
+}
+
+/* Глобальное «стекло» — чуть глубже */
+.glass { backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); }
+
+/* ── Кнопка-шестерёнка настроек ── */
+.settings-fab {
+  position: fixed; top: 12px; right: 12px; z-index: 45;
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 1px solid var(--stroke); cursor: pointer;
+  background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  color: var(--ink); font-size: 20px; line-height: 1;
+  display: grid; place-items: center;
+  box-shadow: 0 8px 22px rgba(0,0,0,.4);
+  transition: transform .2s ease, background .2s ease;
+}
+.settings-fab:hover { transform: rotate(45deg) scale(1.06); background: rgba(255,255,255,.12); }
+/* чтобы правый контент экранов не заезжал под шестерёнку */
+.topbar { padding-right: 46px; }
+.lobby-head { padding-right: 52px; }
+
+/* ── Панель настроек ── */
+.settings-modal h3 { font-family: var(--font-display); text-align: center; margin-bottom: 18px; font-size: 22px; }
+.set-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.set-row { padding: 12px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.set-row:last-child { border-bottom: none; }
+.set-sliders { display: flex; flex-direction: column; gap: 16px; margin: 10px 0 20px; }
+.set-slider { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.set-slider input[type="range"] {
+  -webkit-appearance: none; appearance: none; height: 6px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), #7c3aed); outline: none; cursor: pointer;
+}
+.set-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.5); cursor: pointer;
+}
+.set-slider input[type="range"]::-moz-range-thumb {
+  width: 20px; height: 20px; border: none; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.5); cursor: pointer;
+}
+.set-done { width: 100%; }
+
+/* Эффект появления штрафных карт «+2 / +4» */
+.effect-burst.draw { color: var(--blue); text-shadow: 0 0 32px var(--blue); }
+
+/* Цветная волна при обмене руками */
+.swap-overlay::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: radial-gradient(circle at 50% 50%, rgba(168,85,247,.28), rgba(43,127,255,.18) 30%, transparent 60%);
+  animation: swapWave 1.4s ease-out both;
+}
+@keyframes swapWave { 0% { transform: scale(.2); opacity: 0; } 40% { opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+
+/* Режим «анимации выключены»: гасим декоративные циклы, транзишены остаются */
+body.anim-off *, body.anim-off *::before, body.anim-off *::after {
+  animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+}

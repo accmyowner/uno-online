@@ -72,7 +72,7 @@ export function mountChat(code) {
     text = String(text || "").trim();
     if (!text) return;
     const r = await sendChat(curCode, text);
-    if (r.ok) { input.value = ""; input.focus(); }
+    if (r.ok) { sfx.send(); input.value = ""; input.focus(); }
   }
 
   unsub = subscribeChat(code, (list) => {
