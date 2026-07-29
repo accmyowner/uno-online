@@ -77,7 +77,7 @@ export function renderHome(root, go) {
     createBtn.textContent = "Создаём…";
     try {
       const code = await createRoom(state.room?.meta?.settings || {
-        maxPlayers: 4, turnTime: 30, stacking: true,
+        maxPlayers: 4, turnTime: 30, stacking: true, handSwap: true,
       });
       go("lobby", code);
     } catch (e) {

@@ -1,20 +1,24 @@
 // game.js — игровой экран и взаимодействие с партией.
 import { state, serverNow } from "./state.js";
-import { playCard, drawCard, passTurn, forceTimeout, newGame, backToLobby, leaveRoom } from "./net.js";
+import { playCard, drawCard, passTurn, forceTimeout, newGame, backToLobby, leaveRoom, declareUnoNow, catchUnoNow, expireUno } from "./net.js";
 import { canPlay, isWild } from "./deck.js";
-import { cardEl, miniStack, toast, modal, pickColor, colorName } from "./ui.js";
+import { UNO_WINDOW } from "./engine.js";
+import { cardEl, miniStack, toast, modal, pickColor, pickPlayer, colorName } from "./ui.js";
 import { escapeHtml } from "./utils.js";
+import { sfx } from "./sfx.js";
 
 // ── Состояние экрана (между вызовами render) ──
 let prevHandIds = new Set();
 let prevVersion = -1;
 let shownFinishVersion = -1;
-let unoSplashVersion = -1;
+let shownEventTs = -1;
 let rafId = null;
 let hostTimer = null;
 let lastForcedVersion = -1;
+let lastExpiredKey = -1;
 let current = null; // { data, ctx }
-let finishModal = null; // ссылка на окно победителя, чтобы закрыть его при новой партии
+let finishModal = null;
+let resizeBound = false;
 
 export function unmountGame() {
   if (rafId) cancelAnimationFrame(rafId);
@@ -22,13 +26,64 @@ export function unmountGame() {
   rafId = null; hostTimer = null;
   prevHandIds = new Set();
   prevVersion = -1; shownFinishVersion = -1; lastForcedVersion = -1;
+  shownEventTs = -1; lastExpiredKey = -1;
   if (finishModal) { finishModal.close(); finishModal = null; }
   current = null;
+}
+
+function onResize() {
+  const host = document.getElementById("hand");
+  if (host) layoutHand(host);
 }
 
 function startLoops() {
   if (!rafId) rafId = requestAnimationFrame(tick);
   if (!hostTimer) hostTimer = setInterval(hostTimeoutCheck, 700);
+  if (!resizeBound) { window.addEventListener("resize", onResize); resizeBound = true; }
+}
+
+// ── Адаптивная раскладка руки: всегда помещается на экран, центрирована ──
+function layoutHand(host) {
+  const cards = host.children;
+  const n = cards.length;
+  host.style.removeProperty("--card-w");
+  host.style.removeProperty("--card-h");
+  if (n === 0) return;
+
+  const first = getComputedStyle(cards[0]);
+  let cardW = parseFloat(first.width) || 88;
+  const cardH = parseFloat(first.height) || 128;
+  const ratio = cardH / cardW;
+
+  const hs = getComputedStyle(host);
+  const padX = (parseFloat(hs.paddingLeft) || 0) + (parseFloat(hs.paddingRight) || 0);
+  const availW = host.clientWidth - padX - 6;
+  if (availW <= 0) return;
+
+  const MAX_OVERLAP = 0.72;         // максимум перекрытия карт
+  const MAX_GAP = cardW * 0.26;     // максимальный положительный зазор (для 2–6 карт)
+
+  let gap = 0;
+  if (n > 1) {
+    const fullWidth = n * cardW;
+    if (fullWidth <= availW) {
+      const extra = (availW - fullWidth) / (n - 1);
+      gap = Math.min(extra, MAX_GAP);
+    } else {
+      let overlap = (fullWidth - availW) / (n - 1);
+      const maxOverlapPx = cardW * MAX_OVERLAP;
+      if (overlap > maxOverlapPx) {
+        // даже максимального перекрытия мало — плавно уменьшаем карты
+        const newCardW = availW / (1 + (1 - MAX_OVERLAP) * (n - 1));
+        cardW = Math.max(42, newCardW);
+        host.style.setProperty("--card-w", cardW + "px");
+        host.style.setProperty("--card-h", (cardW * ratio) + "px");
+        overlap = cardW * MAX_OVERLAP;
+      }
+      gap = -overlap;
+    }
+  }
+  host.style.setProperty("--card-gap", gap + "px");
 }
 
 // ── Цикл обновления таймеров (без перерисовки DOM) ──
@@ -38,14 +93,14 @@ function tick() {
   const g = current.data.game;
   if (!g || g.status !== "playing") return;
 
+  const now = serverNow();
   const total = g.settings.turnTime;
-  const elapsed = (serverNow() - g.turnStartedAt) / 1000;
+  const elapsed = (now - g.turnStartedAt) / 1000;
   const remaining = Math.max(0, total - elapsed);
   const p = Math.max(0, Math.min(1, remaining / total));
   const activePid = g.turnOrder[g.currentIndex];
   const low = remaining <= 5;
 
-  // Кольцо активного соперника
   document.querySelectorAll(".opp").forEach((el) => {
     const isActive = el.dataset.pid === activePid;
     el.style.setProperty("--p", isActive ? p : 0);
@@ -54,7 +109,6 @@ function tick() {
     if (secEl) secEl.textContent = isActive ? Math.ceil(remaining) : "";
   });
 
-  // Таймер игрока
   const bar = document.getElementById("myTimerBar");
   const sec = document.getElementById("myTimerSec");
   if (bar) {
@@ -67,9 +121,26 @@ function tick() {
       if (sec) sec.textContent = "";
     }
   }
+
+  // Таймер кнопки UNO (окно, пока можно поймать)
+  const ring = document.getElementById("unoRing");
+  if (ring && g.unoPending && g.unoPending.pid === state.playerId) {
+    const rem = Math.max(0, (g.unoPending.deadline - now) / UNO_WINDOW);
+    ring.style.background = `conic-gradient(#fff ${rem * 360}deg, rgba(255,255,255,.28) 0)`;
+  }
+
+  // Кнопка «Поймать!»: активна после форы и до конца окна
+  const catchBtn = document.getElementById("catchBtn");
+  if (catchBtn && g.unoPending) {
+    const openable = now >= g.unoPending.openedAt + 1500;
+    const alive = now <= g.unoPending.deadline + 300;
+    catchBtn.disabled = !(openable && alive);
+    const cs = document.getElementById("catchSec");
+    if (cs) cs.textContent = alive ? Math.max(0, Math.ceil((g.unoPending.deadline - now) / 1000)) + "" : "";
+  }
 }
 
-// ── Хост следит за тайм-аутами ──
+// ── Хост следит за тайм-аутами и истёкшим окном UNO ──
 async function hostTimeoutCheck() {
   if (!current) return;
   const { data, ctx } = current;
@@ -77,12 +148,22 @@ async function hostTimeoutCheck() {
   if (!g || g.status !== "playing") return;
   if (data.meta.host !== state.playerId) return; // только хост
 
-  const elapsedMs = serverNow() - g.turnStartedAt;
-  const limitMs = g.settings.turnTime * 1000 + 1800; // небольшой запас
-  if (elapsedMs < limitMs) return;
-  if (lastForcedVersion === g.version) return; // уже пытались для этой версии
-  lastForcedVersion = g.version;
-  await forceTimeout(ctx.code, g.version);
+  const now = serverNow();
+
+  // 1) Тайм-аут хода
+  const elapsedMs = now - g.turnStartedAt;
+  const limitMs = g.settings.turnTime * 1000 + 1800;
+  if (elapsedMs >= limitMs && lastForcedVersion !== g.version) {
+    lastForcedVersion = g.version;
+    await forceTimeout(ctx.code, g.version);
+    return;
+  }
+
+  // 2) Истёкшее «окно поимки UNO»
+  if (g.unoPending && now > g.unoPending.deadline + 300 && lastExpiredKey !== g.unoPending.openedAt) {
+    lastExpiredKey = g.unoPending.openedAt;
+    await expireUno(ctx.code);
+  }
 }
 
 // ── Главный рендер ──
@@ -96,7 +177,6 @@ export function renderGame(root, data, ctx) {
     return;
   }
 
-  // Новая партия началась — закрываем окно победителя, если оно ещё открыто
   if (g.status === "playing" && finishModal) { finishModal.close(); finishModal = null; }
 
   const players = data.players || {};
@@ -104,7 +184,6 @@ export function renderGame(root, data, ctx) {
   const activePid = g.turnOrder[g.currentIndex];
   const isMyTurn = activePid === state.playerId && g.status === "playing";
   const versionChanged = g.version !== prevVersion;
-  // Новая партия той же комнатой: версия сброшена в 0 — обновляем кэш анимации раздачи
   if (g.version < prevVersion) prevHandIds = new Set();
 
   root.innerHTML = `
@@ -112,7 +191,10 @@ export function renderGame(root, data, ctx) {
       <div class="topbar">
         <button class="btn btn-quiet btn-sm" id="leaveGameBtn">Выйти</button>
         <div class="turn-banner" id="turnBanner"></div>
-        <div class="game-mode">${g.settings.stacking ? "Складывание +2/+4" : "Классика"}</div>
+        <div class="topbar-right">
+          <span class="game-mode">${g.settings.stacking ? "Складывание +2/+4" : "Классика"}${g.settings.handSwap ? " · 🃏" : ""}</span>
+          <button class="btn btn-quiet btn-sm icon-btn" id="muteBtn" title="Звук">${sfx.isMuted() ? "🔇" : "🔊"}</button>
+        </div>
       </div>
 
       <div class="opponents" id="opponents"></div>
@@ -145,27 +227,45 @@ export function renderGame(root, data, ctx) {
   renderOpponents(root, g, players, activePid);
   renderDiscard(root, g, versionChanged);
   renderTurnBanner(root, g, players, activePid, isMyTurn);
-  renderControls(root, g, myHand, isMyTurn, ctx);
+  renderControls(root, g, myHand, isMyTurn, ctx, players);
   renderHand(root, g, myHand, isMyTurn, ctx);
 
-  // Кнопка выхода
   root.querySelector("#leaveGameBtn").addEventListener("click", async () => {
     await leaveRoom();
     ctx.go("home");
   });
+  root.querySelector("#muteBtn").addEventListener("click", (e) => {
+    const m = sfx.toggleMute();
+    e.currentTarget.textContent = m ? "🔇" : "🔊";
+  });
 
-  // УНО-вспышка, когда кто-то дошёл до одной карты
-  if (versionChanged && unoSplashVersion !== g.version) {
-    const lastPid = g.lastAction?.by;
-    if (g.lastAction?.type === "play" && lastPid && (g.hands[lastPid]?.length === 1)) {
-      unoSplashVersion = g.version;
-      unoSplash(players[lastPid]?.name || "Игрок");
+  // ── Звуки и эффекты событий ──
+  if (versionChanged) {
+    const ev = g.lastEvent;
+    if (ev && ev.ts && shownEventTs !== ev.ts) {
+      shownEventTs = ev.ts;
+      if (ev.type === "uno") {
+        sfx.uno();
+        unoSplash(players[ev.by]?.name || "Игрок");
+      } else if (ev.type === "caught") {
+        sfx.catch();
+        const tgt = players[ev.target]?.name || "Игрок";
+        toast(`«${tgt}» забыл сказать UNO!  +2 карты`, "warn");
+        effectBurst("+2", "catch");
+      } else if (ev.type === "swap") {
+        sfx.swap();
+        const a = players[ev.by]?.name || "Игрок";
+        const b = players[ev.target]?.name || "Игрок";
+        toast(`🃏 ${a} обменялся руками с ${b}!`, "info");
+        swapOverlay(a, b);
+      }
     }
+    if (g.lastAction?.type === "play" && g.lastAction?.card?.value !== "swap") sfx.play();
+    if (g.lastAction?.type === "timeout") sfx.timeout();
   }
 
   prevVersion = g.version;
 
-  // Окно окончания партии
   if (g.status === "finished" && shownFinishVersion !== g.version) {
     shownFinishVersion = g.version;
     showWinnerModal(g, players, ctx);
@@ -184,13 +284,14 @@ function renderTurnBanner(root, g, players, activePid, isMyTurn) {
 function renderOpponents(root, g, players, activePid) {
   const host = root.querySelector("#opponents");
   host.innerHTML = "";
-  // Показываем всех, кроме себя, в порядке хода
   const order = g.turnOrder.filter((pid) => pid !== state.playerId);
   for (const pid of order) {
     const p = players[pid] || { name: "Вышел", avatar: "👻" };
     const count = (g.hands[pid] || []).length;
+    const said = g.saidUno && g.saidUno[pid];
+    const pending = g.unoPending && g.unoPending.pid === pid;
     const el = document.createElement("div");
-    el.className = "opp" + (pid === activePid ? " active" : "");
+    el.className = "opp" + (pid === activePid ? " active" : "") + (pending ? " uno-pending" : "");
     el.dataset.pid = pid;
     el.style.setProperty("--p", 0);
     el.innerHTML = `
@@ -199,7 +300,7 @@ function renderOpponents(root, g, players, activePid) {
         <div class="opp-timer"></div>
       </div>
       <div class="opp-meta">
-        <div class="opp-name">${escapeHtml(p.name)}${count === 1 ? ' <span class="uno-flag">UNO</span>' : ""}</div>
+        <div class="opp-name">${escapeHtml(p.name)}${count === 1 ? ` <span class="uno-flag ${said ? "said" : ""}">UNO</span>` : ""}</div>
         <div class="opp-count"><span class="cnt">${count}</span> карт</div>
       </div>
     `;
@@ -222,7 +323,7 @@ function renderDiscard(root, g, versionChanged) {
   if (deckCount) deckCount.textContent = g.deck.length;
 }
 
-function renderControls(root, g, myHand, isMyTurn, ctx) {
+function renderControls(root, g, myHand, isMyTurn, ctx, players) {
   const host = root.querySelector("#myControls");
   host.innerHTML = "";
   if (g.status !== "playing") return;
@@ -252,17 +353,43 @@ function renderControls(root, g, myHand, isMyTurn, ctx) {
     wait.textContent = "Ожидайте свой ход";
     left.appendChild(wait);
   }
-
   host.appendChild(left);
 
   const right = document.createElement("div");
   right.className = "control-group";
+
+  // Кнопка UNO! — только когда у меня ровно 1 карта и я ещё не сказал UNO
   const myCount = myHand.length;
-  const uno = button("УНО!", "btn-uno");
-  uno.disabled = myCount > 2;
-  if (myCount === 2) uno.classList.add("ready");
-  uno.addEventListener("click", () => unoSplash(state.name || "Вы"));
-  right.appendChild(uno);
+  const said = g.saidUno && g.saidUno[state.playerId];
+  if (myCount === 1 && !said) {
+    const uno = document.createElement("button");
+    uno.className = "btn btn-uno uno-appear";
+    uno.id = "unoBtn";
+    uno.innerHTML = `<span class="uno-ring" id="unoRing"></span><span class="uno-label">UNO!</span>`;
+    uno.addEventListener("click", async () => {
+      const r = await declareUnoNow(ctx.code);
+      if (r.ok) { sfx.uno(); }
+      else if (r.error) toast(r.error, "warn");
+    });
+    right.appendChild(uno);
+  }
+
+  // Кнопка «Поймать!» — если кто-то другой не сказал UNO
+  if (g.unoPending && g.unoPending.pid !== state.playerId && !(g.saidUno && g.saidUno[g.unoPending.pid])) {
+    const tgt = players[g.unoPending.pid]?.name || "игрока";
+    const c = document.createElement("button");
+    c.className = "btn btn-catch catch-appear";
+    c.id = "catchBtn";
+    c.disabled = true;
+    c.innerHTML = `Поймать ${escapeHtml(tgt)}! <span id="catchSec"></span>`;
+    c.addEventListener("click", async () => {
+      const r = await catchUnoNow(ctx.code);
+      if (r.ok) sfx.catch();
+      else if (r.error) toast(r.error, "warn");
+    });
+    right.appendChild(c);
+  }
+
   const timer = document.createElement("span");
   timer.className = "my-timer-sec";
   timer.id = "myTimerSec";
@@ -276,7 +403,7 @@ function renderHand(root, g, myHand, isMyTurn, ctx) {
   const ids = new Set(myHand.map((c) => c.id));
 
   myHand.forEach((card, i) => {
-    const playable = isMyTurn && canPlay(card, g);
+    const playable = isMyTurn && canPlay(card, g) && !(card.value === "swap" && myHand.length < 2);
     const el = cardEl(card, { playable });
     el.style.setProperty("--i", i);
     el.style.setProperty("--n", myHand.length);
@@ -287,6 +414,7 @@ function renderHand(root, g, myHand, isMyTurn, ctx) {
   });
 
   prevHandIds = ids;
+  layoutHand(host);
 }
 
 async function onCardClick(card, g, isMyTurn, ctx, el) {
@@ -296,6 +424,29 @@ async function onCardClick(card, g, isMyTurn, ctx, el) {
     el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake");
     return;
   }
+
+  // Карта «Обмен руками»: выбрать игрока и цвет
+  if (card.value === "swap") {
+    const myLen = (g.hands[state.playerId] || []).length;
+    if (myLen < 2) { toast("«Обмен руками» нельзя разыграть последней картой", "warn"); return; }
+    const players = current?.data?.players || {};
+    const entries = g.turnOrder
+      .filter((pid) => pid !== state.playerId)
+      .map((pid) => ({
+        pid,
+        name: players[pid]?.name || "Игрок",
+        avatar: players[pid]?.avatar || "🙂",
+        count: (g.hands[pid] || []).length,
+      }));
+    const target = await pickPlayer(entries);
+    if (!target) return;
+    const color = await pickColor();
+    if (!color) return;
+    const res = await playCard(ctx.code, card.id, color, target);
+    if (!res.ok && res.error) toast(res.error, "error");
+    return;
+  }
+
   let color = null;
   if (isWild(card)) {
     color = await pickColor();
@@ -316,6 +467,7 @@ async function doPass(code) {
 
 // ── Победное окно ──
 function showWinnerModal(g, players, ctx) {
+  sfx.win();
   const isHost = current?.data?.meta?.host === state.playerId;
   const winner = players[g.winnerId] || { name: "Игрок", avatar: "🏆" };
 
@@ -380,6 +532,31 @@ function unoSplash(name) {
   document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add("show"));
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 400); }, 1200);
+}
+
+// ── Эффект-вспышка (например «+2» при поимке) ──
+function effectBurst(text, kind = "") {
+  const el = document.createElement("div");
+  el.className = `effect-burst ${kind}`;
+  el.textContent = text;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 400); }, 1100);
+}
+
+// ── Анимация обмена руками ──
+function swapOverlay(a, b) {
+  const el = document.createElement("div");
+  el.className = "swap-overlay";
+  el.innerHTML = `
+    <div class="swap-card left">🃏</div>
+    <div class="swap-arrows">⇄</div>
+    <div class="swap-card right">🃏</div>
+    <div class="swap-names">${escapeHtml(a)} ⇄ ${escapeHtml(b)}</div>
+  `;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 400); }, 1500);
 }
 
 // ── helpers ──

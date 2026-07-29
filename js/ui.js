@@ -1,5 +1,6 @@
 // ui.js — переиспользуемые элементы интерфейса.
 import { cardLabel, isWild } from "./deck.js";
+import { escapeHtml } from "./utils.js";
 
 const COLOR_NAMES = { red: "Красный", blue: "Синий", green: "Зелёный", yellow: "Жёлтый" };
 export function colorName(c) { return COLOR_NAMES[c] || "—"; }
@@ -12,6 +13,7 @@ function bigSymbol(card) {
     case "draw2": return "+2";
     case "wild": return "";       // рисуется цветной вертушкой через CSS
     case "wild4": return "+4";
+    case "swap": return "⇄";
     default: return card.value;
   }
 }
@@ -34,6 +36,21 @@ export function cardEl(card, opts = {}) {
   }
 
   const corner = cardLabel(card);
+
+  // Особая карта «Обмен руками» — уникальная иллюстрация
+  if (card.value === "swap") {
+    el.classList.add("is-swap");
+    el.innerHTML = `
+      <span class="wild-wheel"></span>
+      <span class="swap-emblem" aria-hidden="true">
+        <span class="sw-a">↝</span><span class="sw-b">↜</span>
+      </span>
+      <span class="corner tl">${corner}</span>
+      <span class="corner br">${corner}</span>
+    `;
+    return el;
+  }
+
   el.innerHTML = `
     <span class="oval"></span>
     ${card.value === "wild" || card.value === "wild4" ? '<span class="wild-wheel"></span>' : ""}
@@ -113,5 +130,32 @@ export function pickColor() {
       grid.appendChild(b);
     }
     const m = modal(content, { closeable: false });
+  });
+}
+
+// Выбор игрока (для карты «Обмен руками»). Возвращает Promise<pid|null>.
+export function pickPlayer(entries, title = "С кем поменяться руками?") {
+  return new Promise((resolve) => {
+    const content = document.createElement("div");
+    content.className = "player-picker";
+    content.innerHTML = `<h3>${escapeHtml(title)}</h3><div class="pp-grid"></div>`;
+    const grid = content.querySelector(".pp-grid");
+    for (const e of entries) {
+      const b = document.createElement("button");
+      b.className = "pp-choice";
+      b.innerHTML = `<span class="pp-av">${e.avatar || "🙂"}</span>
+        <span class="pp-name">${escapeHtml(e.name)}</span>
+        <span class="pp-count">${e.count} карт</span>`;
+      b.addEventListener("click", () => { m.close(); resolve(e.pid); });
+      grid.appendChild(b);
+    }
+    const cancel = document.createElement("button");
+    cancel.className = "btn btn-quiet pp-cancel";
+    cancel.textContent = "Отмена";
+    cancel.addEventListener("click", () => { m.close(); resolve(null); });
+    content.appendChild(cancel);
+    const m = modal(content, { closeable: true });
+    // Закрытие крестиком/фоном = отмена
+    m.overlay.addEventListener("click", (ev) => { if (ev.target === m.overlay) resolve(null); });
   });
 }

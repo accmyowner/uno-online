@@ -11,9 +11,12 @@ export const COLORS = ["red", "yellow", "green", "blue"];
 //  "draw2"  — +2
 //  "wild"   — выбор цвета
 //  "wild4"  — +4 и выбор цвета
+//  "swap"   — «Обмен руками»: чёрная карта, меняет руки с выбранным игроком + выбор цвета
+//             (добавляется в колоду только если включена настройка комнаты)
 
-// Создание стандартной колоды из 108 карт
-export function createDeck() {
+// Создание стандартной колоды из 108 карт.
+// includeSwap === true → добавляются 2 карты «Обмен руками» (итого 110).
+export function createDeck(includeSwap = false) {
   const deck = [];
   let n = 0;
   const add = (color, value) => deck.push({ id: `c${n++}`, color, value });
@@ -25,11 +28,19 @@ export function createDeck() {
   }
   for (let i = 0; i < 4; i++) { add("wild", "wild"); add("wild", "wild4"); }
 
+  // Экспериментальная карта — строго 2 штуки и только по настройке комнаты
+  if (includeSwap) { add("wild", "swap"); add("wild", "swap"); }
+
   return shuffle(deck);
 }
 
+export function isSwap(card) {
+  return !!card && card.value === "swap";
+}
+
+// «Чёрные»/универсальные карты (требуют выбора цвета и играются на что угодно)
 export function isWild(card) {
-  return card.value === "wild" || card.value === "wild4";
+  return card.value === "wild" || card.value === "wild4" || card.value === "swap";
 }
 
 export function isDrawCard(card) {
@@ -39,6 +50,7 @@ export function isDrawCard(card) {
 // Стоимость карты в очках (классический подсчёт UNO)
 export function cardPoints(card) {
   if (card.value === "wild" || card.value === "wild4") return 50;
+  if (card.value === "swap") return 40;
   if (card.value === "skip" || card.value === "reverse" || card.value === "draw2") return 20;
   return parseInt(card.value, 10) || 0;
 }
@@ -51,6 +63,7 @@ export function cardLabel(card) {
     case "draw2": return "+2";
     case "wild": return "★";
     case "wild4": return "+4";
+    case "swap": return "↔";
     default: return card.value;
   }
 }
@@ -64,7 +77,7 @@ export function canPlay(card, game) {
     if (game.pendingType === "wild4") return card.value === "wild4";
     return false;
   }
-  // Дикие карты можно класть всегда
+  // Дикие карты (в т.ч. «Обмен руками») можно класть всегда
   if (isWild(card)) return true;
   // Совпадение по цвету
   if (card.color === game.currentColor) return true;

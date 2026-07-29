@@ -6,6 +6,7 @@ import { renderHome } from "./home.js";
 import { renderLobby } from "./lobby.js";
 import { renderGame, unmountGame } from "./game.js";
 import { toast } from "./ui.js";
+import { mountChat, unmountChat } from "./chat.js";
 
 const root = document.getElementById("app");
 
@@ -25,6 +26,7 @@ function go(target, code) {
 function teardownRoom() {
   if (unsub) { unsub(); unsub = null; }
   unmountGame();
+  unmountChat();
   currentCode = null;
 }
 
@@ -32,6 +34,7 @@ function enterRoom(code) {
   teardownRoom();
   currentCode = code;
   const ctx = { code, go };
+  mountChat(code);
 
   unsub = subscribeRoom(code, (data) => {
     if (!data) {

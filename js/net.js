@@ -5,7 +5,10 @@ import {
 } from "./firebase.js";
 import { state, serverNow } from "./state.js";
 import { makeRoomCode, cleanName } from "./utils.js";
-import { startRound, play, draw, pass, timeout } from "./engine.js";
+import {
+  startRound, play, draw, pass, timeout,
+  declareUno, catchUno, clearExpiredUno,
+} from "./engine.js";
 
 const roomPath = (code) => `rooms/${code}`;
 
@@ -29,6 +32,8 @@ export function normalizeGame(raw) {
   g.pendingType = g.pendingType || null;
   g.scores = g.scores || {};
   g.wins = g.wins || {};
+  g.saidUno = g.saidUno || {};
+  g.unoPending = g.unoPending || null;
   return g;
 }
 
@@ -50,6 +55,7 @@ export async function createRoom(settings) {
       maxPlayers: settings.maxPlayers,
       turnTime: settings.turnTime,
       stacking: !!settings.stacking,
+      handSwap: !!settings.handSwap,
     },
   };
 
@@ -115,7 +121,7 @@ export async function leaveRoom() {
   } catch (_) {}
   await remove(ref(db, `${roomPath(code)}/players/${state.playerId}`));
 
-  // Если комната опустела — удаляем её целиком
+  // Если комната опустела — удаляем её целиком (вместе с чатом)
   const snap = await get(ref(db, `${roomPath(code)}/players`));
   if (!snap.exists()) {
     await remove(ref(db, roomPath(code)));
@@ -227,14 +233,26 @@ async function gameAction(code, actionFn) {
 }
 
 // ── Действия игрока ──
-export function playCard(code, cardId, chosenColor) {
-  return gameAction(code, (g) => play(g, state.playerId, cardId, chosenColor, serverNow()));
+export function playCard(code, cardId, chosenColor, targetPid) {
+  return gameAction(code, (g) => play(g, state.playerId, cardId, chosenColor, serverNow(), targetPid));
 }
 export function drawCard(code) {
   return gameAction(code, (g) => draw(g, state.playerId, serverNow()));
 }
 export function passTurn(code) {
   return gameAction(code, (g) => pass(g, state.playerId, serverNow()));
+}
+
+// ── Механика UNO ──
+export function declareUnoNow(code) {
+  return gameAction(code, (g) => declareUno(g, state.playerId, serverNow()));
+}
+export function catchUnoNow(code) {
+  return gameAction(code, (g) => catchUno(g, state.playerId, serverNow()));
+}
+// Хост закрывает истёкшее «окно поимки»
+export function expireUno(code) {
+  return gameAction(code, (g) => clearExpiredUno(g, serverNow()));
 }
 
 // ── Тайм-аут хода (вызывает только хост) ──
@@ -245,6 +263,37 @@ export function forceTimeout(code, expectedVersion) {
     if (elapsed < g.settings.turnTime * 1000) return { ok: false, error: "рано" };
     return timeout(g, serverNow());
   });
+}
+
+// ── Чат комнаты (использует ту же синхронизацию Firebase) ──
+let lastChatAt = 0;
+export async function sendChat(code, text) {
+  text = String(text || "").replace(/\s+$/g, "").slice(0, 200);
+  if (!text.trim()) return { ok: false, error: "Пустое сообщение" };
+  const now = serverNow();
+  if (now - lastChatAt < 900) return { ok: false, error: "Слишком часто" }; // антиспам ~1 сообщение/сек
+  lastChatAt = now;
+  const id = `${now.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const name = String(state.name || "Игрок").trim().slice(0, 16) || "Игрок";
+  const msg = { by: state.playerId, name, avatar: state.avatar || "🙂", text, at: now };
+  try {
+    await set(ref(db, `${roomPath(code)}/chat/${id}`), msg);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: "Не удалось отправить" };
+  }
+}
+
+export function subscribeChat(code, cb) {
+  const r = ref(db, `${roomPath(code)}/chat`);
+  const unsub = onValue(r, (snap) => {
+    const val = snap.val() || {};
+    const list = Object.entries(val)
+      .map(([id, m]) => ({ id, ...m }))
+      .sort((a, b) => (a.at || 0) - (b.at || 0));
+    cb(list);
+  });
+  return () => unsub();
 }
 
 // ── Очистка «мёртвых» комнат при заходе на главный экран ──

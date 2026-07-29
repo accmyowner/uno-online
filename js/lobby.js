@@ -33,6 +33,9 @@ export function renderLobby(root, data, ctx) {
         <div class="glass card-panel settings-panel">
           <div class="panel-title">Настройки комнаты</div>
           <div class="settings" id="settings"></div>
+
+          <div class="panel-subtitle">Дополнительные правила</div>
+          <div class="settings extra-rules" id="extraRules"></div>
           ${isHost ? "" : '<p class="muted small">Настройки меняет только хозяин комнаты.</p>'}
         </div>
       </div>
@@ -72,7 +75,7 @@ export function renderLobby(root, data, ctx) {
     <label class="setting">
       <span>Максимум игроков</span>
       <select id="maxPlayers" class="input" ${disabled}>
-        ${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option value="${n}" ${n === s.maxPlayers ? "selected" : ""}>${n}</option>`).join("")}
+        ${[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<option value="${n}" ${n === s.maxPlayers ? "selected" : ""}>${n}</option>`).join("")}
       </select>
     </label>
     <label class="setting">
@@ -86,6 +89,20 @@ export function renderLobby(root, data, ctx) {
       <input type="checkbox" id="stacking" ${s.stacking ? "checked" : ""} ${disabled}>
       <span class="switch"></span>
     </label>
+  `;
+
+  // Дополнительные правила (расширяемый блок)
+  const extraEl = root.querySelector("#extraRules");
+  extraEl.innerHTML = `
+    <label class="setting setting-toggle rule-row">
+      <span class="rule-label"><span class="rule-icon">🃏</span> Карта «Обмен руками»
+        <span class="rule-hint">меняет руки с игроком (2 карты в колоде)</span></span>
+      <input type="checkbox" id="handSwap" ${s.handSwap ? "checked" : ""} ${disabled}>
+      <span class="switch"></span>
+    </label>
+    <div class="rule-row future muted small">
+      <span class="rule-label"><span class="rule-icon">✨</span> Скоро: Jump-In, 7-0, накопление +2/+4…</span>
+    </div>
   `;
 
   // ── Обработчики ──
@@ -109,11 +126,13 @@ export function renderLobby(root, data, ctx) {
         maxPlayers: parseInt(root.querySelector("#maxPlayers").value, 10),
         turnTime: parseInt(root.querySelector("#turnTime").value, 10),
         stacking: root.querySelector("#stacking").checked,
+        handSwap: root.querySelector("#handSwap").checked,
       });
     };
     root.querySelector("#maxPlayers").addEventListener("change", commit);
     root.querySelector("#turnTime").addEventListener("change", commit);
     root.querySelector("#stacking").addEventListener("change", commit);
+    root.querySelector("#handSwap").addEventListener("change", commit);
 
     root.querySelector("#startBtn").addEventListener("click", async () => {
       const res = await startGame(code);

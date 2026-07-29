@@ -2,10 +2,14 @@
 // Функции получают объект партии `game`, изменяют его и возвращают { ok, game, error }.
 // Никаких обращений к Firebase здесь нет — движок легко тестируется и запускается внутри транзакций.
 
-import { createDeck, isWild, canPlay, cardPoints, COLORS } from "./deck.js";
+import { createDeck, isWild, isSwap, canPlay, cardPoints, COLORS } from "./deck.js";
 import { shuffle } from "./utils.js";
 
 const ACTION_VALUES = ["skip", "reverse", "draw2"];
+
+// Окно механики UNO: сколько времени игрок может «поймать» забывшего сказать UNO.
+export const UNO_WINDOW = 5000;   // мс — видимый таймер
+const CATCH_GRACE = 1500;         // мс — фора, чтобы игрок успел сам нажать UNO
 
 function fail(game, error) { return { ok: false, game, error }; }
 function done(game) { game.version = (game.version || 0) + 1; return { ok: true, game, error: null }; }
@@ -39,6 +43,28 @@ function beginTurn(game, now) {
   game.turnStartedAt = now;
 }
 
+// ── Механика UNO ─────────────────────────────────────────────
+// Открыть «окно поимки», если ходивший остался с одной картой и не сказал UNO.
+function openUnoIfNeeded(game, actorPid, now) {
+  game.saidUno = game.saidUno || {};
+  const len = (game.hands[actorPid] || []).length;
+  if (len === 1 && !game.saidUno[actorPid]) {
+    game.unoPending = { pid: actorPid, openedAt: now, deadline: now + UNO_WINDOW };
+  }
+}
+// Привести состояние UNO в согласованность с руками.
+function refreshUno(game) {
+  game.saidUno = game.saidUno || {};
+  for (const pid of game.turnOrder) {
+    const len = (game.hands[pid] || []).length;
+    if (len !== 1 && game.saidUno[pid]) delete game.saidUno[pid];
+  }
+  if (game.unoPending) {
+    const len = (game.hands[game.unoPending.pid] || []).length;
+    if (len !== 1) game.unoPending = null;
+  }
+}
+
 function finishRound(game, winnerId) {
   let roundPoints = 0;
   for (const pid of game.turnOrder) {
@@ -53,11 +79,12 @@ function finishRound(game, winnerId) {
   game.wins = game.wins || {};
   game.wins[winnerId] = (game.wins[winnerId] || 0) + 1;
   game.finishedAt = game.turnStartedAt;
+  game.unoPending = null;
 }
 
 // Начать новый раунд. scores/wins переносятся из предыдущей партии, если переданы.
 export function startRound(turnOrder, settings, now, prevScores = {}, prevWins = {}) {
-  const deck = createDeck();
+  const deck = createDeck(!!settings.handSwap);
   const hands = {};
   for (const pid of turnOrder) hands[pid] = [];
   for (let r = 0; r < 7; r++) {
@@ -86,12 +113,16 @@ export function startRound(turnOrder, settings, now, prevScores = {}, prevWins =
     roundPoints: 0,
     scores: { ...prevScores },
     wins: { ...prevWins },
+    saidUno: {},
+    unoPending: null,
     settings: {
       turnTime: settings.turnTime,
       stacking: !!settings.stacking,
+      handSwap: !!settings.handSwap,
     },
     turnStartedAt: now,
     lastAction: { type: "deal", by: null, ts: now },
+    lastEvent: null,
     version: 0,
   };
   for (const pid of turnOrder) {
@@ -101,8 +132,8 @@ export function startRound(turnOrder, settings, now, prevScores = {}, prevWins =
   return game;
 }
 
-// Сыграть карту
-export function play(game, playerId, cardId, chosenColor, now) {
+// Сыграть карту. targetPid используется только картой «Обмен руками».
+export function play(game, playerId, cardId, chosenColor, now, targetPid) {
   if (!game || game.status !== "playing") return fail(game, "Партия не идёт");
   if (currentPid(game) !== playerId) return fail(game, "Сейчас не ваш ход");
 
@@ -114,7 +145,37 @@ export function play(game, playerId, cardId, chosenColor, now) {
   if (!canPlay(card, game)) return fail(game, "Недопустимый ход");
   if (isWild(card) && !COLORS.includes(chosenColor)) return fail(game, "Не выбран цвет");
 
-  // Убираем карту из руки в сброс
+  // Новое действие закрывает «окно поимки UNO» предыдущего игрока
+  game.unoPending = null;
+
+  // ── Особая карта «Обмен руками» ──
+  if (isSwap(card)) {
+    if (hand.length < 2) return fail(game, "«Обмен руками» нельзя разыграть последней картой");
+    const targets = game.turnOrder.filter((pid) => pid !== playerId);
+    if (!targetPid || !targets.includes(targetPid)) return fail(game, "Не выбран игрок для обмена");
+
+    hand.splice(cardIndex, 1);
+    game.discardPile.push(card);
+    game.discardTop = card;
+    game.topValue = card.value;
+    game.currentColor = chosenColor;
+
+    // Полный обмен рук между ходившим и выбранным игроком
+    const mine = game.hands[playerId];
+    game.hands[playerId] = game.hands[targetPid];
+    game.hands[targetPid] = mine;
+
+    game.lastAction = { type: "play", by: playerId, card, color: chosenColor, swapWith: targetPid, ts: now };
+    game.lastEvent = { type: "swap", by: playerId, target: targetPid, ts: now };
+
+    advance(game, 1);
+    beginTurn(game, now);
+    openUnoIfNeeded(game, playerId, now);
+    refreshUno(game);
+    return done(game);
+  }
+
+  // ── Обычные карты ──
   hand.splice(cardIndex, 1);
   game.discardPile.push(card);
   game.discardTop = card;
@@ -166,6 +227,8 @@ export function play(game, playerId, cardId, chosenColor, now) {
   }
 
   beginTurn(game, now);
+  openUnoIfNeeded(game, playerId, now);
+  refreshUno(game);
   return done(game);
 }
 
@@ -173,6 +236,8 @@ export function play(game, playerId, cardId, chosenColor, now) {
 export function draw(game, playerId, now) {
   if (!game || game.status !== "playing") return fail(game, "Партия не идёт");
   if (currentPid(game) !== playerId) return fail(game, "Сейчас не ваш ход");
+
+  game.unoPending = null;
 
   if (game.pendingDraw > 0) {
     const amount = game.pendingDraw;
@@ -182,6 +247,7 @@ export function draw(game, playerId, now) {
     game.lastAction = { type: "draw", by: playerId, count: amount, ts: now };
     advance(game, 1);
     beginTurn(game, now);
+    refreshUno(game);
     return done(game);
   }
 
@@ -190,6 +256,7 @@ export function draw(game, playerId, now) {
   drawN(game, playerId, 1);
   game.drawnThisTurn = true;
   game.lastAction = { type: "draw", by: playerId, count: 1, ts: now };
+  refreshUno(game);
   // Ход остаётся у игрока: он может сыграть взятую карту или спасовать
   return done(game);
 }
@@ -201,9 +268,54 @@ export function pass(game, playerId, now) {
   if (game.pendingDraw > 0) return fail(game, "Сначала заберите карты");
   if (!game.drawnThisTurn) return fail(game, "Сначала возьмите карту");
 
+  game.unoPending = null;
   game.lastAction = { type: "pass", by: playerId, ts: now };
   advance(game, 1);
   beginTurn(game, now);
+  refreshUno(game);
+  return done(game);
+}
+
+// Сказать «UNO» (доступно, когда в руке ровно одна карта)
+export function declareUno(game, playerId, now) {
+  if (!game || game.status !== "playing") return fail(game, "Партия не идёт");
+  const len = (game.hands[playerId] || []).length;
+  if (len !== 1) return fail(game, "Сказать «UNO» можно только с одной картой");
+  game.saidUno = game.saidUno || {};
+  if (game.saidUno[playerId]) return fail(game, "Вы уже сказали UNO");
+  game.saidUno[playerId] = true;
+  if (game.unoPending && game.unoPending.pid === playerId) game.unoPending = null;
+  game.lastEvent = { type: "uno", by: playerId, ts: now };
+  return done(game);
+}
+
+// Поймать игрока, забывшего сказать UNO (штраф +2)
+export function catchUno(game, catcherId, now) {
+  if (!game || game.status !== "playing") return fail(game, "Партия не идёт");
+  const p = game.unoPending;
+  if (!p) return fail(game, "Сейчас некого ловить");
+  if (p.pid === catcherId) return fail(game, "Нельзя ловить самого себя");
+  if (!game.turnOrder.includes(catcherId)) return fail(game, "Вы не в игре");
+  game.saidUno = game.saidUno || {};
+  if (game.saidUno[p.pid]) return fail(game, "Игрок уже сказал UNO");
+  if (now < p.openedAt + CATCH_GRACE) return fail(game, "Ещё рано");
+  if (now > p.deadline + 600) return fail(game, "Уже поздно");
+
+  drawN(game, p.pid, 2);
+  const target = p.pid;
+  game.unoPending = null;
+  game.lastEvent = { type: "caught", by: catcherId, target, ts: now };
+  refreshUno(game);
+  return done(game);
+}
+
+// Хост закрывает истёкшее «окно поимки» (когда никто не поймал за отведённое время)
+export function clearExpiredUno(game, now) {
+  if (!game || game.status !== "playing") return fail(game, "нет партии");
+  const p = game.unoPending;
+  if (!p) return fail(game, "нет ожидания");
+  if (now <= p.deadline) return fail(game, "рано");
+  game.unoPending = null;
   return done(game);
 }
 
@@ -212,6 +324,8 @@ export function pass(game, playerId, now) {
 export function timeout(game, now) {
   if (!game || game.status !== "playing") return fail(game, "Партия не идёт");
   const pid = currentPid(game);
+
+  game.unoPending = null;
 
   if (game.pendingDraw > 0) {
     const amount = game.pendingDraw;
@@ -224,5 +338,6 @@ export function timeout(game, now) {
   game.lastAction = { type: "timeout", by: pid, ts: now };
   advance(game, 1);
   beginTurn(game, now);
+  refreshUno(game);
   return done(game);
 }
