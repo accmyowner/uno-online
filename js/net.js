@@ -56,6 +56,7 @@ export async function createRoom(settings) {
       turnTime: settings.turnTime,
       stacking: !!settings.stacking,
       handSwap: !!settings.handSwap,
+      specialRate: settings.specialRate || "classic",
     },
   };
 

@@ -89,6 +89,13 @@ export function renderLobby(root, data, ctx) {
       <input type="checkbox" id="stacking" ${s.stacking ? "checked" : ""} ${disabled}>
       <span class="switch"></span>
     </label>
+    <label class="setting">
+      <span>Вероятность спец-карт</span>
+      <select id="specialRate" class="input" ${disabled}>
+        ${[["low", "Маленькая"], ["mid", "Средняя"], ["classic", "Обычная"], ["high", "Большая"]]
+          .map(([v, t]) => `<option value="${v}" ${(s.specialRate || "classic") === v ? "selected" : ""}>${t}</option>`).join("")}
+      </select>
+    </label>
   `;
 
   // Дополнительные правила (расширяемый блок)
@@ -127,12 +134,14 @@ export function renderLobby(root, data, ctx) {
         turnTime: parseInt(root.querySelector("#turnTime").value, 10),
         stacking: root.querySelector("#stacking").checked,
         handSwap: root.querySelector("#handSwap").checked,
+        specialRate: root.querySelector("#specialRate").value,
       });
     };
     root.querySelector("#maxPlayers").addEventListener("change", commit);
     root.querySelector("#turnTime").addEventListener("change", commit);
     root.querySelector("#stacking").addEventListener("change", commit);
     root.querySelector("#handSwap").addEventListener("change", commit);
+    root.querySelector("#specialRate").addEventListener("change", commit);
 
     root.querySelector("#startBtn").addEventListener("click", async () => {
       const res = await startGame(code);

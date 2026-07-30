@@ -6,11 +6,16 @@ function assert(cond, msg) { if (!cond) throw new Error("ОШИБКА: " + msg);
 const COLORS = ["red", "yellow", "green", "blue"];
 const rnd = (n) => Math.floor(Math.random() * n);
 
-// 1) Размер колоды
-assert(createDeck(false).length === 108, "колода без swap должна быть 108");
-assert(createDeck(true).length === 110, "колода со swap должна быть 110");
-assert(createDeck(true).filter(isSwap).length === 2, "ровно 2 карты swap");
-assert(createDeck(false).filter(isSwap).length === 0, "без настройки swap нет в колоде");
+// 1) Колода: числовые карты не меняются, спец-карты масштабируются настройкой
+const numeric = (d) => d.filter(c => /^[0-9]$/.test(c.value)).length;
+const special = (d) => d.filter(c => !/^[0-9]$/.test(c.value)).length;
+assert(numeric(createDeck({specialRate:"low"})) === 76, "числовых карт всегда 76");
+assert(numeric(createDeck({specialRate:"high"})) === 76, "числовых карт всегда 76 (high)");
+assert(special(createDeck({specialRate:"high"})) > special(createDeck({specialRate:"classic"})), "Большая > Обычной по спец-картам");
+assert(special(createDeck({specialRate:"classic"})) > special(createDeck({specialRate:"low"})), "Обычная > Маленькой по спец-картам");
+assert(createDeck({handSwap:true}).filter(isSwap).length === 2, "classic + swap → 2 карты обмена");
+assert(createDeck({handSwap:false}).filter(isSwap).length === 0, "без настройки swap нет в колоде");
+assert(createDeck(true).filter(isSwap).length === 2, "обратная совместимость createDeck(true)");
 
 function totalCards(g) {
   let t = g.deck.length + g.discardPile.length;
@@ -19,11 +24,12 @@ function totalCards(g) {
 }
 
 // 2) Массовая симуляция со swap и механикой UNO
-function simulate(nPlayers, stacking, handSwap) {
+function totalOf(g){ let t=g.deck.length+g.discardPile.length; for(const pid of g.turnOrder) t+=g.hands[pid].length; return t; }
+function simulate(nPlayers, stacking, handSwap, specialRate) {
   const order = Array.from({ length: nPlayers }, (_, i) => "P" + i);
   let now = 1000;
-  let g = startRound(order, { turnTime: 30, stacking, handSwap }, now);
-  const expectTotal = handSwap ? 110 : 108;
+  let g = startRound(order, { turnTime: 30, stacking, handSwap, specialRate }, now);
+  const expectTotal = totalOf(g);
   let moves = 0;
 
   while (g.status === "playing") {
@@ -115,7 +121,8 @@ for (let i = 0; i < 300; i++) {
   const n = 2 + rnd(9);            // 2..10 игроков
   const stacking = Math.random() < 0.5;
   const handSwap = Math.random() < 0.7;
-  totalMoves += simulate(n, stacking, handSwap);
+  const specialRate = ["low","mid","classic","high"][Math.floor(Math.random()*4)];
+  totalMoves += simulate(n, stacking, handSwap, specialRate);
   games++;
 }
 

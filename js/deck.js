@@ -14,22 +14,32 @@ export const COLORS = ["red", "yellow", "green", "blue"];
 //  "swap"   — «Обмен руками»: чёрная карта, меняет руки с выбранным игроком + выбор цвета
 //             (добавляется в колоду только если включена настройка комнаты)
 
-// Создание стандартной колоды из 108 карт.
-// includeSwap === true → добавляются 2 карты «Обмен руками» (итого 110).
-export function createDeck(includeSwap = false) {
+// Множители количества СПЕЦИАЛЬНЫХ карт по настройке комнаты
+// (числовые карты не меняются). classic = классическое UNO.
+const SPECIAL_RATES = { low: 0.4, mid: 0.7, classic: 1.0, high: 1.8 };
+
+// Создание колоды. opts = { handSwap, specialRate }.
+// Для обратной совместимости допускается createDeck(true) === { handSwap:true }.
+export function createDeck(opts = {}) {
+  if (typeof opts === "boolean") opts = { handSwap: opts };
+  const handSwap = !!opts.handSwap;
+  const rate = SPECIAL_RATES[opts.specialRate] != null ? SPECIAL_RATES[opts.specialRate] : 1.0;
+  const scaled = (base) => Math.max(0, Math.round(base * rate));
+
   const deck = [];
   let n = 0;
-  const add = (color, value) => deck.push({ id: `c${n++}`, color, value });
+  const add = (color, value, times = 1) => { for (let i = 0; i < times; i++) deck.push({ id: `c${n++}`, color, value }); };
 
   for (const color of COLORS) {
-    add(color, "0"); // по одному нулю
-    for (let v = 1; v <= 9; v++) { add(color, String(v)); add(color, String(v)); }
-    for (const special of ["skip", "reverse", "draw2"]) { add(color, special); add(color, special); }
+    add(color, "0", 1);                                   // числовые карты не масштабируются
+    for (let v = 1; v <= 9; v++) add(color, String(v), 2);
+    for (const special of ["skip", "reverse", "draw2"]) add(color, special, scaled(2));
   }
-  for (let i = 0; i < 4; i++) { add("wild", "wild"); add("wild", "wild4"); }
+  add("wild", "wild", scaled(4));
+  add("wild", "wild4", scaled(4));
 
-  // Экспериментальная карта — строго 2 штуки и только по настройке комнаты
-  if (includeSwap) { add("wild", "swap"); add("wild", "swap"); }
+  // «Обмен руками» — только если включена настройка; количество тоже зависит от вероятности спец-карт
+  if (handSwap) add("wild", "swap", Math.max(1, scaled(2)));
 
   return shuffle(deck);
 }

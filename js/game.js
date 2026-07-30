@@ -6,7 +6,6 @@ import { UNO_WINDOW } from "./engine.js";
 import { cardEl, miniStack, toast, modal, pickColor, pickPlayer, colorName } from "./ui.js";
 import { escapeHtml } from "./utils.js";
 import { sfx } from "./sfx.js";
-import { settings } from "./settings.js";
 
 // ── Состояние экрана (между вызовами render) ──
 let prevHandIds = new Set();
@@ -43,48 +42,55 @@ function startLoops() {
   if (!resizeBound) { window.addEventListener("resize", onResize); resizeBound = true; }
 }
 
-// ── Адаптивная раскладка руки: всегда помещается на экран, центрирована ──
+// ── Адаптивная раскладка руки: ВСЕГДА помещается на экран, центрирована ──
 function layoutHand(host) {
   const cards = host.children;
   const n = cards.length;
   host.style.removeProperty("--card-w");
   host.style.removeProperty("--card-h");
+  host.style.setProperty("--fan", "1");
   if (n === 0) return;
 
   const first = getComputedStyle(cards[0]);
-  let cardW = parseFloat(first.width) || 88;
-  const cardH = parseFloat(first.height) || 128;
+  let cardW = parseFloat(first.width) || 80;
+  const cardH = parseFloat(first.height) || 116;
   const ratio = cardH / cardW;
 
   const hs = getComputedStyle(host);
   const padX = (parseFloat(hs.paddingLeft) || 0) + (parseFloat(hs.paddingRight) || 0);
-  const availW = host.clientWidth - padX - 6;
-  if (availW <= 0) return;
+  let availW = host.clientWidth - padX;
+  if (availW <= 40) availW = window.innerWidth - 24; // запасной вариант, если ширина ещё не готова
+  availW -= 4;
 
-  const MAX_OVERLAP = 0.72;         // максимум перекрытия карт
-  const MAX_GAP = cardW * 0.26;     // максимальный положительный зазор (для 2–6 карт)
+  const MAX_OVERLAP = 0.82; // максимально допустимое перекрытие
+  const MIN_CARD = 30;      // минимальный размер карты
+  const MAX_GAP = cardW * 0.24;
 
   let gap = 0;
   if (n > 1) {
-    const fullWidth = n * cardW;
-    if (fullWidth <= availW) {
-      const extra = (availW - fullWidth) / (n - 1);
-      gap = Math.min(extra, MAX_GAP);
+    const full = n * cardW;
+    if (full <= availW) {
+      // всё помещается без перекрытия — раздвигаем (но не слишком)
+      gap = Math.min((availW - full) / (n - 1), MAX_GAP);
     } else {
-      let overlap = (fullWidth - availW) / (n - 1);
-      const maxOverlapPx = cardW * MAX_OVERLAP;
-      if (overlap > maxOverlapPx) {
-        // даже максимального перекрытия мало — плавно уменьшаем карты
-        const newCardW = availW / (1 + (1 - MAX_OVERLAP) * (n - 1));
-        cardW = Math.max(42, newCardW);
+      // нужно перекрытие: шаг ровно по ширине экрана
+      let step = (availW - cardW) / (n - 1);
+      const minStep = cardW * (1 - MAX_OVERLAP);
+      if (step < minStep) {
+        // даже максимального перекрытия мало — уменьшаем карты
+        cardW = Math.max(MIN_CARD, availW / (1 + (1 - MAX_OVERLAP) * (n - 1)));
         host.style.setProperty("--card-w", cardW + "px");
         host.style.setProperty("--card-h", (cardW * ratio) + "px");
-        overlap = cardW * MAX_OVERLAP;
+        step = Math.max(0, (availW - cardW) / (n - 1)); // снова ровно по ширине
       }
-      gap = -overlap;
+      gap = step - cardW; // отрицательный отступ
     }
   }
   host.style.setProperty("--card-gap", gap + "px");
+
+  // Чем больше карт — тем меньше «веер», чтобы края не выходили за поле
+  const fan = n <= 6 ? 1 : Math.min(1, 12 / (n - 1));
+  host.style.setProperty("--fan", String(Math.max(0.12, fan)));
 }
 
 // ── Цикл обновления таймеров (без перерисовки DOM) ──
@@ -194,7 +200,6 @@ export function renderGame(root, data, ctx) {
         <div class="turn-banner" id="turnBanner"></div>
         <div class="topbar-right">
           <span class="game-mode">${g.settings.stacking ? "Складывание +2/+4" : "Классика"}${g.settings.handSwap ? " · 🃏" : ""}</span>
-          <button class="btn btn-quiet btn-sm icon-btn" id="muteBtn" title="Звук">${sfx.isMuted() ? "🔇" : "🔊"}</button>
         </div>
       </div>
 
@@ -235,14 +240,10 @@ export function renderGame(root, data, ctx) {
     await leaveRoom();
     ctx.go("home");
   });
-  root.querySelector("#muteBtn").addEventListener("click", (e) => {
-    const m = sfx.toggleMute();
-    e.currentTarget.textContent = m ? "🔇" : "🔊";
-  });
 
   // ── Звуки и эффекты событий ──
   if (versionChanged) {
-    const fx = settings.effectsOn();
+    const fx = true;
     const ev = g.lastEvent;
     if (ev && ev.ts && shownEventTs !== ev.ts) {
       shownEventTs = ev.ts;
@@ -493,7 +494,7 @@ function showWinnerModal(g, players, ctx) {
   const content = document.createElement("div");
   content.className = "winner-modal";
   content.innerHTML = `
-    <div class="confetti" aria-hidden="true">${settings.effectsOn() ? "<i></i>".repeat(24) : ""}</div>
+    <div class="confetti" aria-hidden="true">${"<i></i>".repeat(24)}</div>
     <div class="winner-crown">🏆</div>
     <h2 class="winner-title">${escapeHtml(winner.name)} побеждает!</h2>
     <p class="winner-sub">+${g.roundPoints} очков за партию</p>

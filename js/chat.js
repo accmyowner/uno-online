@@ -56,7 +56,7 @@ export function mountChat(code) {
   const input = rootEl.querySelector("#chatInput");
   const sendBtn = rootEl.querySelector("#chatSend");
 
-  fab.addEventListener("click", () => setOpen(!open));
+  makeFabDraggable(fab);
   closeBtn.addEventListener("click", () => setOpen(false));
   sendBtn.addEventListener("click", () => doSend(input.value));
 
@@ -147,6 +147,77 @@ function renderMessages() {
       </div>`;
   }).join("");
   scrollBottom(nearBottom || true);
+}
+
+// ── Перетаскиваемая кнопка чата (тап = открыть, перетаскивание = переместить) ──
+const FAB_KEY = "uno_chatfab_pos_v1";
+const FAB_MARGIN = 8;
+
+function clampFab(fab, x, y) {
+  const w = fab.offsetWidth || 56, h = fab.offsetHeight || 56;
+  const maxX = window.innerWidth - w - FAB_MARGIN;
+  const maxY = window.innerHeight - h - FAB_MARGIN;
+  return {
+    x: Math.max(FAB_MARGIN, Math.min(x, maxX)),
+    y: Math.max(FAB_MARGIN, Math.min(y, maxY)),
+  };
+}
+function placeFab(fab, x, y) {
+  const p = clampFab(fab, x, y);
+  fab.style.left = p.x + "px";
+  fab.style.top = p.y + "px";
+  fab.style.right = "auto";
+  fab.style.bottom = "auto";
+}
+function restoreFabPos(fab) {
+  try {
+    const raw = localStorage.getItem(FAB_KEY);
+    if (!raw) return;
+    const { x, y } = JSON.parse(raw);
+    if (typeof x === "number" && typeof y === "number") {
+      // применяем после того, как размеры кнопки известны
+      requestAnimationFrame(() => placeFab(fab, x, y));
+    }
+  } catch (_) {}
+}
+function makeFabDraggable(fab) {
+  restoreFabPos(fab);
+  let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+
+  fab.addEventListener("pointerdown", (e) => {
+    dragging = true; moved = false;
+    const r = fab.getBoundingClientRect();
+    ox = r.left; oy = r.top;
+    sx = e.clientX; sy = e.clientY;
+    try { fab.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  fab.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.hypot(dx, dy) > 6) moved = true;
+    if (moved) { e.preventDefault(); placeFab(fab, ox + dx, oy + dy); }
+  });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { fab.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (moved) {
+      const r = fab.getBoundingClientRect();
+      try { localStorage.setItem(FAB_KEY, JSON.stringify({ x: r.left, y: r.top })); } catch (_) {}
+    } else {
+      setOpen(!open); // это был тап — открыть/закрыть чат
+    }
+  };
+  fab.addEventListener("pointerup", end);
+  fab.addEventListener("pointercancel", end);
+
+  // При изменении размера экрана не даём кнопке уйти за границы
+  window.addEventListener("resize", () => {
+    if (fab.style.left) {
+      const r = fab.getBoundingClientRect();
+      placeFab(fab, r.left, r.top);
+    }
+  });
 }
 
 export function unmountChat() {

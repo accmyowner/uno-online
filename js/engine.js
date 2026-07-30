@@ -84,7 +84,7 @@ function finishRound(game, winnerId) {
 
 // Начать новый раунд. scores/wins переносятся из предыдущей партии, если переданы.
 export function startRound(turnOrder, settings, now, prevScores = {}, prevWins = {}) {
-  const deck = createDeck(!!settings.handSwap);
+  const deck = createDeck({ handSwap: !!settings.handSwap, specialRate: settings.specialRate });
   const hands = {};
   for (const pid of turnOrder) hands[pid] = [];
   for (let r = 0; r < 7; r++) {
@@ -119,6 +119,7 @@ export function startRound(turnOrder, settings, now, prevScores = {}, prevWins =
       turnTime: settings.turnTime,
       stacking: !!settings.stacking,
       handSwap: !!settings.handSwap,
+      specialRate: settings.specialRate || "classic",
     },
     turnStartedAt: now,
     lastAction: { type: "deal", by: null, ts: now },
