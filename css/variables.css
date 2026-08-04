@@ -1,0 +1,52 @@
+/* variables.css — единые дизайн-токены проекта */
+:root {
+  /* Фон и поверхности (тёмная тема, «ночной стол») */
+  --bg-0: #0b0f14;
+  --bg-1: #111823;
+  --bg-2: #17212e;
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.10);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+
+  /* Текст */
+  --text: #e9eef4;
+  --text-muted: #93a0ae;
+  --text-dim: #5f6c7a;
+
+  /* Акцент (золото UNO) */
+  --accent: #f2b31c;
+  --accent-ink: #1a1206;
+  --accent-glow: rgba(242, 179, 28, 0.35);
+
+  /* Четыре цвета UNO (настроены под тёмный фон) */
+  --uno-red: #e4483d;
+  --uno-yellow: #f2b31c;
+  --uno-green: #33b55a;
+  --uno-blue: #3e86e6;
+
+  --uno-red-ink: #4a0f0b;
+  --uno-yellow-ink: #40300a;
+  --uno-green-ink: #0c3a1c;
+  --uno-blue-ink: #0c2650;
+
+  /* Опасность / UNO */
+  --danger: #ff4d4d;
+
+  /* Размеры и радиусы */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --gap: 12px;
+
+  /* Шрифты */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Тени */
+  --shadow-1: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 14px 40px rgba(0, 0, 0, 0.5);
+
+  /* Анимации */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}

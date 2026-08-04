@@ -1,0 +1,60 @@
+/* menu.css — главное меню и лобби */
+
+.brand { text-align: center; margin-bottom: 6px; line-height: 1; }
+.brand__mark {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 64px;
+  letter-spacing: -0.03em;
+  font-style: italic;
+  color: var(--accent);
+  text-shadow: 0 4px 24px var(--accent-glow);
+}
+.brand__sub {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: 0.5em;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  padding-left: 0.5em;
+}
+
+/* Лобби */
+.room-code {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--bg-1); border: 1px solid var(--hairline);
+  border-radius: var(--r-md); padding: 14px 16px;
+}
+.room-code__label { font-size: 13px; color: var(--text-muted); }
+.room-code__value {
+  font-family: var(--font-display); font-weight: 700; font-size: 30px;
+  letter-spacing: 0.25em; color: var(--accent); margin-left: auto;
+}
+.room-code .btn { margin-left: 8px; }
+
+.lobby-section { display: flex; flex-direction: column; gap: 10px; }
+.lobby-section__head { display: flex; justify-content: space-between; align-items: baseline; }
+.lobby-section__title { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.lobby-count { font-size: 13px; color: var(--text-muted); }
+
+.lobby-players { display: flex; flex-direction: column; gap: 6px; }
+.lobby-player {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-md); padding: 10px 14px;
+}
+.lobby-player__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--uno-green); flex: none; }
+.lobby-player.is-offline { opacity: 0.5; }
+.lobby-player.is-offline .lobby-player__dot { background: var(--text-dim); }
+.lobby-player__name { font-weight: 500; }
+.lobby-player__host, .lobby-player__you {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: auto;
+}
+.lobby-player__host { background: var(--accent-glow); color: var(--accent); }
+.lobby-player__you { background: var(--surface-strong); color: var(--text-muted); }
+.lobby-player__host + .lobby-player__you { margin-left: 6px; }
+
+.lobby-wait { text-align: center; color: var(--text-muted); font-size: 14px; padding: 12px; }

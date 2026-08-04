@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Правила рассчитаны на игру с друзьями по коду комнаты и анонимный вход.
+// Любой вошедший пользователь может читать и изменять комнаты — это
+// сознательный компромисс (см. раздел «Ограничения» в README).
+// Для более строгой модели нужна серверная валидация (Cloud Functions).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /rooms/{code} {
+      // Читать и менять комнату может любой аутентифицированный игрок.
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null;
+
+      // Сообщения чата: автор должен совпадать с текущим пользователем.
+      match /messages/{messageId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+                      && request.resource.data.senderId == request.auth.uid
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() <= 300;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

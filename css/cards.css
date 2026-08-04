@@ -1,0 +1,114 @@
+/* cards.css — карты и веер руки */
+
+.card {
+  position: relative;
+  width: 72px; height: 108px;
+  border-radius: 11px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  flex: none;
+  --c: #888;
+}
+
+/* Цвета */
+.card--red    { background: linear-gradient(150deg, #ef5a50, var(--uno-red));    --c: var(--uno-red); }
+.card--yellow { background: linear-gradient(150deg, #f6c23f, var(--uno-yellow)); --c: var(--uno-yellow); }
+.card--green  { background: linear-gradient(150deg, #46c76a, var(--uno-green));  --c: var(--uno-green); }
+.card--blue   { background: linear-gradient(150deg, #5a99ec, var(--uno-blue));   --c: var(--uno-blue); }
+.card--wild   { background: linear-gradient(150deg, #232c39, #141b25); --c: #eef2f7; }
+
+/* Белый овал в центре (фирменный знак UNO), слегка наклонён */
+.card__oval {
+  position: absolute;
+  inset: 12%;
+  background: #fff;
+  border-radius: 50%;
+  transform: rotate(-22deg);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.08);
+}
+.card--wild .card__oval {
+  background: conic-gradient(var(--uno-red) 0 25%, var(--uno-yellow) 0 50%,
+                             var(--uno-green) 0 75%, var(--uno-blue) 0 100%);
+}
+
+.card__glyph {
+  transform: rotate(22deg);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--c);
+  -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.12);
+}
+.card--wild .card__glyph { color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+
+/* Уголки */
+.card__corner {
+  position: absolute;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+}
+.card__corner--tl { top: 6px; left: 8px; }
+.card__corner--br { bottom: 6px; right: 8px; transform: rotate(180deg); }
+
+/* Рубашка */
+.card--back {
+  background: linear-gradient(150deg, #1d2735, #0e141d);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+.card__oval--back {
+  background: var(--uno-red);
+  transform: rotate(-22deg);
+}
+.card__logo {
+  transform: rotate(22deg);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 20px;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+/* ------- Веер руки ------- */
+.hand {
+  position: relative;
+  width: 100%;
+  flex: none;
+  touch-action: manipulation;
+}
+.hand-card {
+  position: absolute;
+  top: 0; left: 0;
+  width: var(--card-w, 72px);
+  height: var(--card-h, 108px);
+  transition: top 0.15s var(--ease), box-shadow 0.15s var(--ease), filter 0.15s;
+  cursor: pointer;
+}
+.hand-card .card__glyph { font-size: calc(var(--card-w, 72px) * 0.46); }
+.hand-card.is-disabled {
+  filter: saturate(0.55) brightness(0.7);
+  cursor: default;
+}
+.hand-card.is-playable:hover {
+  top: -16px;
+  z-index: 999 !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+/* Мини-карты у оппонентов */
+.mini-card {
+  position: absolute; top: 0;
+  width: 34px; height: 50px;
+  border-radius: 6px; border-width: 1px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.mini-card .card__oval { inset: 16%; }
+.mini-card .card__logo { font-size: 10px; }
